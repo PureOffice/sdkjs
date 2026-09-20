@@ -2494,6 +2494,90 @@
 
 	function UploadImageFiles(files, documentId, documentUserId, jwt, shardKey, wopiSrc, userSessionId, callback)
 	{
+		// [OHOS: image] 插入图片宿主供给（原 ascshim 47_img 注入段轮询覆写本函数）：
+		// 官方链为 web 形态专属——POST 到 sUploadServiceLocalUrl（DocumentServer 上传
+		// 服务）拿服务器 URL；桌面形态走 C++ 注入的 emulateUpload，ArkWeb 下两者皆无。
+		// 本分支：FileReader 读文件 → base64 → 桥（execCommand 'media:put'）落进本
+		// tab 的 media/ 目录 → 模型引用 'media/<name>' 与渲染 URL '_offline_media/<name>'
+		// 建映射（g_oDocumentUrls）——保存时 x2t 按 <bin 同级>/media/ 取图打包
+		// （DocxSerializer setSrcPath），渲染走拦截层供给，三链共用同一目录。
+		// 刻意不定义 window.native 冒充 native 引擎（多处以 native 存在切换整套行为）。
+		if (window["AscNative"] && typeof window["AscNative"]["_call"] === "function")
+		{
+			var _ohosErrId = (typeof Asc !== "undefined" && Asc.c_oAscError) ? Asc.c_oAscError.ID : null;
+			var _ohosEUrl = _ohosErrId ? _ohosErrId.UplImageUrl : 0;
+			try
+			{
+				if (!files || files.length === 0)
+				{
+					callback(_ohosErrId ? _ohosErrId.UplImageFileCount : _ohosEUrl);
+					return;
+				}
+				var _ohosFile = files[0];
+				var _ohosFr = new FileReader();
+				_ohosFr.onload = function ()
+				{
+					try
+					{
+						var res = String(_ohosFr.result || "");
+						var comma = res.indexOf(",");
+						var b64 = comma >= 0 ? res.substring(comma + 1) : "";
+						// 扩展名取 data URL 的 MIME（与真实字节同源）；先去参数段
+						// （直接切到逗号会得 'image/png;base64' → 扩展名带 'base64'）；
+						// 取不到回退原文件名后缀
+						var mime = comma >= 0 ? res.substring(5, comma).toLowerCase() : "";
+						var semi = mime.indexOf(";");
+						if (semi >= 0) { mime = mime.substring(0, semi); }
+						var ext = mime.indexOf("/") >= 0 ? mime.substring(mime.indexOf("/") + 1) : "";
+						ext = ext.replace("+xml", "").replace(/[^a-z0-9]/g, "");
+						if (ext === "jpeg") { ext = "jpg"; }
+						if (!ext)
+						{
+							var fn = String(_ohosFile.name || "");
+							var d = fn.lastIndexOf(".");
+							ext = d >= 0 ? fn.substring(d + 1).toLowerCase().replace(/[^a-z0-9]/g, "") : "png";
+						}
+						if (!b64)
+						{
+							console.error("LSO_IMG empty ext=" + ext);
+							callback(_ohosEUrl);
+							return;
+						}
+						var name = String(window.AscNative._call("execCommand", ["media:put", ext + "|" + b64]) || "");
+						if (!name || name === '""' || name === "false")
+						{
+							console.error("LSO_IMG put fail r=" + name);
+							callback(_ohosEUrl);
+							return;
+						}
+						// 模型引用（media/<name>）→ 渲染 URL（_offline_media/<name>）映射
+						var map = {};
+						map["media/" + name] = "_offline_media/" + name;
+						g_oDocumentUrls.addUrls(map);
+						console.error("LSO_IMG put ok " + name + " b64=" + b64.length);
+						callback(_ohosErrId ? _ohosErrId.No : 0, ["_offline_media/" + name]);
+					}
+					catch (e)
+					{
+						console.error("LSO_IMG onload err " + String(e));
+						callback(_ohosEUrl);
+					}
+				};
+				_ohosFr.onerror = function ()
+				{
+					console.error("LSO_IMG read err");
+					callback(_ohosEUrl);
+				};
+				_ohosFr.readAsDataURL(_ohosFile);
+			}
+			catch (e)
+			{
+				console.error("LSO_IMG err " + String(e));
+				callback(_ohosEUrl);
+			}
+			return;
+		}
+
 		if (files.length > 0)
 		{
 			let url = sUploadServiceLocalUrl + '/' + documentId;
@@ -16181,3 +16265,211 @@ window["AscDesktopEditor_Save"] = function()
         window["AscDesktopEditor"]["OnSave"]();
     }
 };
+
+// [OHOS: media-unpack] 宿主预解包文档媒体（原 ascshim 48_mediaunpack 注入段，
+// xlsx 图片显示前置条件，2026-09-12 实证）：x2t 打开 pptx/docx 时会把
+// `ppt|word/media/*` 解包到工作目录（<tabDir>/media/，渲染链按
+// `_offline_media/<name>` 供给），但 xlsx 不会——`xl/media/*` 不进工作目录、
+// bin 里却留着引用。本块拉源文件字节，就地解析 zip 中央目录，把 `*/media/*`
+// 逐个解出（store 直取/deflate-raw 走原生 DecompressionStream，不引第三方库）
+// → 桥 execCommand 'media:unpack' 落进本 tab 的 media/（名字保持 zip 内原名，
+// bin 引用即此名）。对 pptx/docx 同样可跑（同名覆盖一致、无害）。
+// 触发：URL 带 &src=<源文件名>（宿主拼接；新文档无此参数）。引擎 bundle 执行
+// 早于文档注入与任何图片请求。不定义 window.native 冒充 native 引擎（语义面大）。
+//
+// [OHOS: base64] Base64.encode 主线程补位（缺失才挂）：AscCommon.Base64 的唯一
+// 挂载源 common/stringserialize.js 只进 worker bundle（sdk-all.js），三个编辑器
+// 的主线程 bundle（sdk-all-min.js）都没有它——主 bundle 里 AscCommon.Base64.*
+// 的既有用法（apiBase asc_Print、官方 svg 内嵌/加密流低频路径）实际全是
+// undefined 炸弹。此处按 stringserialize.js 原实现逐字节补挂 encode（主线程
+// 域首个消费点；decode 无消费场景不补）。纯函数、无状态，与 worker 域挂载
+// 不冲突（同 id 幂等）。
+(function ()
+{
+	try
+	{
+		// 无条件先做 base64 补位（任何早退路径下主线程域都该有 encode——
+		// print:bin 等场景无 src= 参数同样依赖）
+		window["AscCommon"] = window["AscCommon"] || {};
+		if (!(window["AscCommon"]["Base64"] && window["AscCommon"]["Base64"]["encode"]))
+		{
+			var _b64tab = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".split('');
+			window["AscCommon"]["Base64"] = window["AscCommon"].Base64 = {
+				// 与 common/stringserialize.js 的 encode 逐字节等价（含 76 字符分行
+				// 语义——dstArray 分段 join 不影响结果）；isUsePrefix 官方调用点
+				// 仅 true 传真值，本壳两处调用均 false
+				encode: function (input, offset, length, isUsePrefix)
+				{
+					var srcLen = (undefined === length) ? input.length : length;
+					var index = (undefined === offset) ? 0 : offset;
+					var len1 = (((srcLen / 3) >> 0) * 4);
+					var len2 = (len1 / 76) >> 0;
+					var len3 = 19;
+					var dstArray = [];
+					var sTemp = "";
+					var dwCurr = 0;
+					for (var i = 0; i <= len2; i++)
+					{
+						if (i == len2)
+							len3 = ((len1 % 76) / 4) >> 0;
+						for (var j = 0; j < len3; j++)
+						{
+							dwCurr = 0;
+							for (var n = 0; n < 3; n++)
+							{
+								dwCurr |= input[index++];
+								dwCurr <<= 8;
+							}
+							sTemp = "";
+							for (var k = 0; k < 4; k++)
+							{
+								var b = (dwCurr >>> 26) & 0xFF;
+								sTemp += _b64tab[b];
+								dwCurr <<= 6;
+								dwCurr &= 0xFFFFFFFF;
+							}
+							dstArray.push(sTemp);
+						}
+					}
+					len2 = (srcLen % 3 != 0) ? (srcLen % 3 + 1) : 0;
+					if (len2)
+					{
+						dwCurr = 0;
+						for (var n2 = 0; n2 < 3; n2++)
+						{
+							if (n2 < (srcLen % 3))
+								dwCurr |= input[index++];
+							dwCurr <<= 8;
+						}
+						sTemp = "";
+						for (var k2 = 0; k2 < len2; k2++)
+						{
+							var b2 = (dwCurr >>> 26) & 0xFF;
+							sTemp += _b64tab[b2];
+							dwCurr <<= 6;
+						}
+						var len4 = (len2 != 0) ? 4 - len2 : 0;
+						for (var j2 = 0; j2 < len4; j2++)
+							sTemp += '=';
+						dstArray.push(sTemp);
+					}
+					return isUsePrefix ? (("" + srcLen + ";") + dstArray.join("")) : dstArray.join("");
+				}
+			};
+		}
+
+		if (window["__ohosUnpacked"])
+			return;
+		var _m = String(window.location.search).match(/[?&]src=([^&]+)/);
+		if (!_m)
+			return;
+		var _name = decodeURIComponent(_m[1]);
+		// 只处理 zip 容器（OOXML）；其余格式的媒体供给由各自链路负责
+		if (!/\.(xlsx|docx|pptx|xlsm|docm|pptm)$/i.test(_name))
+			return;
+		if (!(window["AscNative"] && typeof window["AscNative"]["_call"] === "function"))
+			return;
+		window["__ohosUnpacked"] = true;
+		var _log = function (s) { try { console.error('LSO_UNPACK ' + s); } catch (e) { } };
+
+		function _findMedia(u8)
+		{
+			var n = u8.length;
+			var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+			// EOCD（中央目录结束记录）：从尾部回扫，最大注释 64KB
+			var eocd = -1;
+			for (var i = n - 22; i >= 0 && i >= n - 66000; i--)
+			{
+				if (u8[i] === 0x50 && u8[i + 1] === 0x4b && u8[i + 2] === 0x05 && u8[i + 3] === 0x06)
+				{
+					eocd = i;
+					break;
+				}
+			}
+			if (eocd < 0) { _log('no eocd'); return []; }
+			var count = dv.getUint16(eocd + 10, true);
+			var p = dv.getUint32(eocd + 16, true);
+			var out = [];
+			for (var k = 0; k < count && p + 46 <= n; k++)
+			{
+				if (dv.getUint32(p, true) !== 0x02014b50) { break; }
+				var method = dv.getUint16(p + 10, true);
+				var csize = dv.getUint32(p + 20, true);
+				var nameLen = dv.getUint16(p + 28, true);
+				var extraLen = dv.getUint16(p + 30, true);
+				var cmtLen = dv.getUint16(p + 32, true);
+				var lho = dv.getUint32(p + 42, true);
+				var nm = '';
+				for (var j = 0; j < nameLen; j++) { nm += String.fromCharCode(u8[p + 46 + j]); }
+				// 媒体条目：<根>/media/<文件>（word/ ppt/ xl/）；只取单一文件名，防目录穿越
+				var mm = nm.match(/(?:^|\/)(?:media)\/([^/]+)$/);
+				if (mm)
+				{
+					var lnameLen = dv.getUint16(lho + 26, true);
+					var lextraLen = dv.getUint16(lho + 28, true);
+					out.push({
+						name: mm[1], method: method, csize: csize,
+						off: lho + 30 + lnameLen + lextraLen
+					});
+				}
+				p += 46 + nameLen + extraLen + cmtLen;
+			}
+			return out;
+		}
+
+		function _inflate(u8, e)
+		{
+			var raw = u8.subarray(e.off, e.off + e.csize);
+			if (e.method === 0) { return Promise.resolve(raw); }   // store
+			if (e.method !== 8 || typeof DecompressionStream === 'undefined')
+			{
+				return Promise.resolve(null);
+			}
+			try
+			{
+				var st = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+				return new Response(st).arrayBuffer().then(function (b) { return new Uint8Array(b); })
+					['catch'](function (x) { _log('ds err ' + String(x)); return null; });
+			}
+			catch (x) { _log('ds sync err ' + String(x)); return Promise.resolve(null); }
+		}
+
+		var _x = new XMLHttpRequest();
+		_x.open('GET', 'http://localhost/userfile/' + encodeURIComponent(_name) + '?v=' + Date.now(), true);
+		_x.responseType = 'arraybuffer';
+		_x.onload = function ()
+		{
+			try
+			{
+				var ab = _x.response;
+				if (!ab || !ab.byteLength) { _log('src empty st=' + _x.status); return; }
+				var u8 = new Uint8Array(ab);
+				var items = _findMedia(u8);
+				if (!items.length) { _log('no media in ' + _name); return; }
+				_log('found ' + items.length + ' media, src=' + ab.byteLength);
+				var _seq = Promise.resolve();
+				items.forEach(function (e)
+				{
+					_seq = _seq.then(function ()
+					{
+						return _inflate(u8, e).then(function (data)
+						{
+							if (!data || !data.byteLength) { _log('inflate fail ' + e.name); return; }
+							var b64 = AscCommon.Base64.encode(data, 0, data.byteLength, false);
+							if (!b64) { _log('b64 fail ' + e.name); return; }
+							var r = String(window.AscNative._call('execCommand', ['media:unpack', e.name + '|' + b64]) || '');
+							_log('unpack ' + e.name + ' bytes=' + data.byteLength + ' ret=' + r);
+						});
+					})['catch'](function (x) { _log('seq err ' + String(x) + ' @' + e.name); });
+				});
+			}
+			catch (x) { _log('err ' + String(x)); }
+		};
+		_x.onerror = function () { _log('xhr err st=' + _x.status); };
+		_x.send(null);
+	}
+	catch (e)
+	{
+		try { console.error('LSO_UNPACK_HOOK_ERR ' + String(e)); } catch (e2) { }
+	}
+})();
