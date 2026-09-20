@@ -118,7 +118,10 @@
 		this.nativeFocusElementNoRemoveOnElementFocus = false;
 		this.InterfaceEnableKeyEvents = true;
 		this.isNoClearOnFocus = false;
-		this.isGlobalDisableFocus = false;
+		// [OHOS: nofocus] 非 PC 形态宿主以 URL 参数 nofocus=1 声明「抑制焦点夺回」：
+		// ArkWeb 上可编辑元素聚焦即拉起系统软键盘，点工具栏/关菜单等界面事件会
+		// 把焦点夺回隐藏输入代理（area_id）导致键盘误弹。初始化按 URL 一次求值。
+		this.isGlobalDisableFocus = /[?&]nofocus=1/.test(window.location.search || '');
 
 		this.ReadOnlyCounter = 0;
 
@@ -1441,6 +1444,36 @@
 
 		//window["SetInputDebugMode"]();
 
+		// [OHOS: nofocus] 点文档区补聚焦：文档 canvas 不可聚焦、浏览器不会代劳，
+		// 而下方 focus 监听器已被 isGlobalDisableFocus 早退——用户点文档区要输入时
+		// 主动聚焦隐藏输入代理拉起软键盘。判据与 web-apps 一致
+		// （closest('#editor_sdk')，六个编辑器统一的文档区容器 id）；三种指针事件
+		// 都挂（不同路径收到的种类不同）。
+		if (/[?&]nofocus=1/.test(window.location.search || ''))
+		{
+			var _ohosFocusMark = function(e)
+				{
+					try
+					{
+						var _el = e && e.target;
+						if (_el && _el.closest && _el.closest('#editor_sdk'))
+						{
+							var _ha = window['AscCommon'].g_inputContext.HtmlArea;
+							if (_ha && document.activeElement !== _ha)
+							{
+								_ha.focus();
+							}
+						}
+					}
+					catch (_e2)
+					{
+					}
+				};
+			document.addEventListener('pointerdown', _ohosFocusMark, true);
+			document.addEventListener('mousedown', _ohosFocusMark, true);
+			document.addEventListener('touchstart', _ohosFocusMark, true);
+		}
+
 		document.addEventListener("focus", function(e)
 		{
 			var t                = window['AscCommon'].g_inputContext;
@@ -1468,7 +1501,11 @@
 			var _nativeFocusElementNoRemoveOnElementFocus = t.nativeFocusElementNoRemoveOnElementFocus;
 			t.nativeFocusElementNoRemoveOnElementFocus = false;
 
-			if (t.InterfaceEnableKeyEvents == false)
+			// [OHOS: nofocus] isGlobalDisableFocus 时同样早退：跳过末段兜底
+			// focusHtmlElement(t.getFocusElement())——它会把焦点强行拉回隐藏输入代理，
+			// 是键盘已隐藏后再点界面元素仍重弹软键盘的原因（前半段的
+			// onFocusInputText 等状态维护不受影响）
+			if (t.InterfaceEnableKeyEvents == false || t.isGlobalDisableFocus)
 			{
 				t.nativeFocusElement = null;
 				return;
