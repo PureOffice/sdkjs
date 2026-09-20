@@ -3116,6 +3116,52 @@
 		return new AscCommon.asc_CAdvancedOptions(cp);
 	};
 	baseEditorsApi.prototype.asc_Print = function (options) {
+		// [OHOS: print] OHOS 宿主打印链（原 ascshim 45_print 注入段的 asc_Print 覆写，
+		// 2026-09-10 三格式真机验证）：元文件流（asc_nativeGetPDF 内置
+		// CDocumentRenderer，产出多页拼接的元文件指令流）→ 宿主 x2t bin2pdf（纯 C++
+		// NSOnlineOfficeBinToPdf）→ @ohos.print 系统打印（execCommand 'print:bin'）。
+		// 截断（关键）：CMemory 构造即预分配 5MB（Metafile.js 532-545），返回整块
+		// 预分配数组（尾部全 0），而 bin2pdf 解析器 while(oReader.Check()) 读到零
+		// 字节游标不进 → 死循环——官方 CEF 靠引擎在返回前调 window.native.Save_End
+		// (header, len) 报告真实长度再截断（doctrenderer.cpp:459 同款），此处调用期
+		// 临时挂桩捕获 len、finally 还原。三编辑器（word/cell/slide）打印入口全部
+		// 汇入本单点（工具栏/文件菜单/打印面板/快速打印）。
+		if (window["AscNative"] && typeof window["AscNative"]["_call"] === "function"
+			&& typeof this.asc_nativeGetPDF === "function")
+		{
+			try
+			{
+				var _ohosLen = 0;
+				var _ohosOldNative = window.native;
+				var _ohosBin = null;
+				window.native = {Save_End: function(header, l) { _ohosLen = l || 0; }};
+				try
+				{
+					_ohosBin = this.asc_nativeGetPDF(options);
+				}
+				finally
+				{
+					window.native = _ohosOldNative;
+				}
+				if (!_ohosBin || !_ohosBin.byteLength)
+				{
+					console.error('LSO_PRINT_EMPTY');
+					return;
+				}
+				// len 异常（0 或超界）退回全长——宿主侧有兜底
+				var _ohosN = (_ohosLen > 0 && _ohosLen <= _ohosBin.byteLength) ? _ohosLen : _ohosBin.byteLength;
+				var _ohosB64 = AscCommon.Base64.encode(_ohosBin, 0, _ohosN, false);
+				var _ohosRet = String(window.AscNative._call('execCommand', ['print:bin', _ohosB64]) || '');
+				console.error('LSO_PRINT_CALL len=' + _ohosN + '/' + _ohosBin.byteLength
+					+ ' b64=' + _ohosB64.length + ' ret=' + _ohosRet);
+			}
+			catch (e)
+			{
+				console.error('LSO_PRINT_HOOK_ERR ' + String(e));
+			}
+			return;
+		}
+
 		if (window["AscDesktopEditor"] && this._printDesktop(options)) {
 			return;
 		}
