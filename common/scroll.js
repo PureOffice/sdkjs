@@ -1588,12 +1588,19 @@ CArrowDrawer.prototype.InitSize = function ( sizeW, sizeH )
 				this.ArrowDrawer.InitSize( this.settings.arrowSizeH, this.settings.arrowSizeW );
 		}
 	};
-	ScrollObject.prototype._MouseHoverOnScroller = function ( mp ) {
-		if(this.settings.isVerticalScroll && mp.x >= 0 && mp.x <= this.scroller.x + this.scroller.w &&
-			mp.y >= this.scroller.y && mp.y <= this.scroller.y + this.scroller.h) {
+	ScrollObject.prototype._MouseHoverOnScroller = function ( mp, tol ) {
+		// [OHOS: touch-scroll] 触摸按下判定留边界容差：14px 窄条在触摸输入下
+		// 可靠区仅剩几像素，且边界 ±3px 内命中判定抖动（2026-09-19 真机四轮
+		// canvas 级探针实测）。tol 由触摸场景的调用方传入，鼠标 hover/点击判定
+		// 不传（官方行为不变）。mp 与 scroller 均为设备像素坐标（已乘 dPR），
+		// tol 须同样以设备像素传入（8 CSS px × retinaPixelRatio）。
+		if (tol === undefined)
+			tol = 0;
+		if(this.settings.isVerticalScroll && mp.x >= 0 - tol && mp.x <= this.scroller.x + this.scroller.w + tol &&
+			mp.y >= this.scroller.y - tol && mp.y <= this.scroller.y + this.scroller.h + tol) {
 			return true;
-		} else if(this.settings.isHorizontalScroll && mp.x >= this.scroller.x && mp.x <= this.scroller.x + this.scroller.w &&
-			mp.y >= 0 && mp.y <= this.scroller.y + this.scroller.h) {
+		} else if(this.settings.isHorizontalScroll && mp.x >= this.scroller.x - tol && mp.x <= this.scroller.x + this.scroller.w + tol &&
+			mp.y >= 0 - tol && mp.y <= this.scroller.y + this.scroller.h + tol) {
 			return true;
 		} else {
 			return false;
@@ -1954,7 +1961,11 @@ CArrowDrawer.prototype.InitSize = function ( sizeW, sizeH )
 		} else {
 			this.that.mouseUp = false;
 
-			if ( this.that._MouseHoverOnScroller( mousePos ) ) {
+			// [OHOS: touch-scroll] 触摸起手判定带 8 CSS px 容差（鼠标判定不变）；
+			// 原 capture 层坐标接管（ascshim 51_scrollpad 注入段）由本源码判定取代
+			if ( this.that._MouseHoverOnScroller( mousePos,
+				(evt && (evt.pointerType === 'touch' || (evt.touches && evt.touches.length > 0)))
+					? 8 * AscBrowser.retinaPixelRatio : 0 ) ) {
 				this.that.scrollerMouseUp = false;
 				this.that.scrollerMouseDown = true;
 
