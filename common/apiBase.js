@@ -1430,7 +1430,10 @@
 	{
 		var file = new AscCommon.OpenFileResult();
 		file.data = AscCommon.getEmpty();
-		file.bSerFormat = AscCommon.checkStreamSignature(file.data, AscCommon.c_oSerFormat.Signature);
+		// 9.4.0 空文档 v2 构造器（word/document/editor.js）返回 DOCY;v2 字符串信封；
+		// checkStreamSignature 对字符串流恒 false（逐字符 vs charCodeAt）→ bSerFormat
+		// 必须显式置 true，否则 openDocument 走 OpenDocument(url,data)（未定义）崩溃。
+		file.bSerFormat = (typeof file.data === 'string') ? true : AscCommon.checkStreamSignature(file.data, AscCommon.c_oSerFormat.Signature);
 		this.onEndLoadFile(file);
 	};
 	baseEditorsApi.prototype._openDocumentEndCallback            = function()

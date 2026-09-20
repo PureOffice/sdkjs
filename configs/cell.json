@@ -15,8 +15,8 @@
 			"vendor/string.js",
 			"vendor/array.js",
 			"common/editorscommon.js",
-          "common/frameManager.js",
-          "common/BulletPreviewDrawer.js",
+			"common/frameManager.js",
+			"common/BulletPreviewDrawer.js",
 			"common/HistoryCommon.js",
 			"common/TableId.js",
 			"common/TableIdChanges.js",
@@ -48,16 +48,12 @@
 			"common/api/autoCorrectSettings.js",
 			"common/api/firstLetterExceptions.js",
 			"common/api/restrictionSettings.js",
-			
 			"common/collaboration/deleted-text-recovery.js",
-			
 			"common/custom-xml/serialize-custom-xml.js",
-			
 			"common/nameMap.js",
 			"common/downloaderfiles.js",
 			"common/NumFormat.js",
 			"common/SerializeChart.js",
-
 			"common/libfont/common.js",
 			"common/libfont/map.js",
 			"common/libfont/rasterheap.js",
@@ -68,32 +64,25 @@
 			"common/libfont/stringshaper.js",
 			"common/libfont/file.js",
 			"common/libfont/manager.js",
-
 			"common/stringserialize.js",
 			"common/digest/sha256.js",
 			"common/random.js",
 			"common/hash/hash.js",
 			"common/keychainstorage.js",
-
 			"common/Drawings/GraphicsBase.js",
 			"common/Drawings/Metafile.js",
 			"common/libfont/textmeasurer.js",
 			"common/Drawings/WorkEvents.js",
-
 			"word/Editor/History.js",
 			"cell/model/History.js",
-
 			"common/Shapes/EditorSettings.js",
 			"common/Shapes/ColorSchemes.js",
 			"common/Shapes/Serialize.js",
 			"common/Shapes/SerializeWriter.js",
-
 			"common/Drawings/Hit.js",
 			"common/Drawings/ArcTo.js",
 			"common/Drawings/ColorArray.js",
-
 			"common/SmartArts/SmartArtCache.js",
-
 			"common/Drawings/CommonController.js",
 			"common/Drawings/States.js",
 			"common/Drawings/DrawingsChanges.js",
@@ -129,30 +118,23 @@
 			"common/Drawings/TrackObjects/ConnectorTrack.js",
 			"common/Drawings/DrawingObjectsHandlers.js",
 			"common/Drawings/TextDrawer.js",
-
 			"common/PromiseIterators.js",
 			"common/ExternalDataLoader.js",
-
 			"common/Drawings/Externals.js",
 			"common/GlobalLoaders.js",
 			"common/Controls.js",
 			"common/Overlay.js",
 			"common/Drawings/HatchPattern.js",
-			
 			"common/bidi/bidi-common.js",
 			"common/bidi/bidi-brackets.js",
 			"common/bidi/bidi-types.js",
 			"common/bidi/unicode-data.js",
-			
 			"common/scroll.js",
 			"vendor/iscroll.js",
 			"vendor/delta.js",
 			"common/Scrolls/mobileTouchManagerBase.js",
-
 			"common/wordcopypaste.js",
-
 			"common/intervalTree.js",
-
 			"cell/document/empty.js",
 			"cell/model/UndoRedo.js",
 			"cell/model/clipboard.js",
@@ -210,7 +192,6 @@
 			"common/Drawings/Format/SlicerView.js",
 			"common/Drawings/Format/Controls.js",
 			"cell/model/PivotTables.js",
-			
 			"word/Editor/Paragraph/RunContent/Types.js",
 			"word/Math/mathTypes.js",
 			"word/Editor/Styles/para-spacing.js",
@@ -218,7 +199,6 @@
 			"word/Math/math-settings.js",
 			"word/Editor/StructuredDocumentTags/sdt-settings.js",
 			"word/Editor/DocumentSettings.js",
-			
 			"word/Editor/Paragraph/Run/FontClassification.js",
 			"word/Editor/Paragraph/Run/FontCalculator.js",
 			"word/Editor/Paragraph/Run/run-composite-input.js",
@@ -396,19 +376,15 @@
 			"word/Editor/custom-xml/custom-xml-changes.js",
 			"word/Editor/custom-xml/custom-xml-manager.js",
 			"word/Editor/custom-xml/data-binding.js",
-			
 			"word/Editor/api/document-column-props.js",
 			"word/Editor/api/document-columns-props.js",
 			"word/Editor/api/document-section-props.js",
-			
 			"word/Editor/document-visitor.js",
-			
 			"word/apiBuilder.js",
 			"slide/apiBuilder.js",
 			"cell/apiBuilder.js",
 			"word/fromToJSON.js",
 			"cell/fromToJSON.js",
-
 			"common/versionHistory.js",
 			"common/clipboard_base.js",
 			"common/text_input2.js",
@@ -416,9 +392,7 @@
 			"common/Drawings/Format/OleObject.js",
 			"common/Drawings/Format/DrawingContent.js",
 			"common/plugins.js",
-
 			"common/Native/native_graphics.js",
-			
 			"vendor/easysax.js",
 			"common/openxml.js"
 		],
@@ -427,23 +401,19 @@
 				"common/Local/license.js"
 			],
 			"common": [
-				"common/Local/common.js",
-				"cell/Local/api.js"
+				"common/Local/license.js"
 			]
 		},
-		"mobile": [
-		],
+		"mobile": [],
 		"exclude_mobile": [
 			"vendor/iscroll.js",
 			"common/Overlay.js",
 			"common/Controls.js",
-
 			"common/Scrolls/mobileTouchManagerBase.js",
 			"cell/view/mobileTouch.js",
-
 			"word/Drawing/ShapeDrawer.js",
 			"cell/model/DrawingObjects/DrawingDocument.js",
-			"cell/model/DrawingObjects/Graphics.js"			
+			"cell/model/DrawingObjects/Graphics.js"
 		]
 	}
 }

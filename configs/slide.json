@@ -35,6 +35,7 @@
 			"word/apiCommon.js",
 			"slide/api.js",
 			"slide/api_plugins.js",
+			"slide/document/editor.js",
 			"common/spell/spell.js",
 			"word/Editor/Table/TableLook.js",
 			"cell/utils/utils.js"
@@ -47,16 +48,12 @@
 			"common/api/autoCorrectSettings.js",
 			"common/api/firstLetterExceptions.js",
 			"common/api/restrictionSettings.js",
-			
 			"common/collaboration/deleted-text-recovery.js",
-			
 			"common/custom-xml/serialize-custom-xml.js",
-
 			"common/nameMap.js",
 			"common/downloaderfiles.js",
 			"common/NumFormat.js",
 			"common/SerializeChart.js",
-
 			"common/libfont/common.js",
 			"common/libfont/map.js",
 			"common/libfont/rasterheap.js",
@@ -67,30 +64,23 @@
 			"common/libfont/stringshaper.js",
 			"common/libfont/file.js",
 			"common/libfont/manager.js",
-
 			"common/stringserialize.js",
 			"common/digest/sha256.js",
 			"common/random.js",
 			"common/keychainstorage.js",
-
 			"common/Drawings/GraphicsBase.js",
 			"common/Drawings/Metafile.js",
 			"common/libfont/textmeasurer.js",
 			"common/Drawings/WorkEvents.js",
-			
 			"word/Editor/History.js",
-
 			"common/Shapes/EditorSettings.js",
 			"common/Shapes/ColorSchemes.js",
 			"common/Shapes/Serialize.js",
 			"common/Shapes/SerializeWriter.js",
-
 			"common/Drawings/Hit.js",
 			"common/Drawings/ArcTo.js",
 			"common/Drawings/ColorArray.js",
-
 			"common/SmartArts/SmartArtCache.js",
-
 			"common/Drawings/CommonController.js",
 			"common/Drawings/States.js",
 			"common/Drawings/DrawingsChanges.js",
@@ -113,7 +103,7 @@
 			"common/Drawings/Format/TextBody.js",
 			"slide/Editor/Format/TextBodyPrototype.js",
 			"common/Drawings/Format/GraphicFrame.js",
-		  	"common/Drawings/Format/Controls.js",
+			"common/Drawings/Format/Controls.js",
 			"common/Charts/charts.js",
 			"common/Charts/DrawingObjects.js",
 			"common/Charts/3DTransformation.js",
@@ -129,30 +119,24 @@
 			"common/Drawings/TrackObjects/ConnectorTrack.js",
 			"common/Drawings/DrawingObjectsHandlers.js",
 			"common/Drawings/TextDrawer.js",
-
 			"common/PromiseIterators.js",
 			"common/ExternalDataLoader.js",
-
 			"common/Drawings/Externals.js",
 			"common/GlobalLoaders.js",
 			"common/Controls.js",
 			"common/Overlay.js",
 			"common/Drawings/HatchPattern.js",
-			
 			"common/bidi/bidi-common.js",
 			"common/bidi/bidi-brackets.js",
 			"common/bidi/bidi-types.js",
 			"common/bidi/unicode-data.js",
-			
 			"common/scroll.js",
 			"vendor/iscroll.js",
 			"vendor/delta.js",
 			"common/Scrolls/mobileTouchManagerBase.js",
 			"slide/Drawing/mobileTouchManager.js",
-
 			"common/wordcopypaste.js",
 			"common/intervalTree.js",
-
 			"cell/model/SheetMemory.js",
 			"cell/model/FormulaObjects/parserFormula.js",
 			"cell/model/WorkbookElems.js",
@@ -162,7 +146,6 @@
 			"cell/model/HeaderFooter.js",
 			"cell/view/DrawingObjectsController.js",
 			"cell/view/HandlerList.js",
-			
 			"word/Editor/Paragraph/RunContent/Types.js",
 			"word/Math/mathTypes.js",
 			"word/Editor/Styles/para-spacing.js",
@@ -170,7 +153,6 @@
 			"word/Math/math-settings.js",
 			"word/Editor/StructuredDocumentTags/sdt-settings.js",
 			"word/Editor/DocumentSettings.js",
-			
 			"word/Editor/Paragraph/Run/FontClassification.js",
 			"word/Editor/Paragraph/Run/FontCalculator.js",
 			"word/Editor/Paragraph/Run/run-composite-input.js",
@@ -209,12 +191,9 @@
 			"word/Editor/sections/sect-pr-changes.js",
 			"word/Editor/sections/section-columns.js",
 			"word/Editor/sections/section-page.js",
-
-
 			"word/Drawing/Graphics.js",
 			"word/Drawing/ShapeDrawer.js",
 			"word/Drawing/buttons.js",
-
 			"slide/Editor/SlideShowAnnotations.js",
 			"slide/Drawing/Transitions.js",
 			"slide/Drawing/TransitionsGL.js",
@@ -376,24 +355,20 @@
 			"word/Editor/custom-xml/custom-xml-manager.js",
 			"word/Editor/custom-xml/data-binding.js",
 			"slide/Editor/Shortcuts.js",
-
 			"word/Editor/api/document-column-props.js",
 			"word/Editor/api/document-columns-props.js",
 			"word/Editor/api/document-section-props.js",
-
 			"slide/Editor/Format/ImagePrototype.js",
 			"slide/Editor/Format/GroupPrototype.js",
 			"slide/Editor/Format/ChartSpacePrototype.js",
 			"common/Drawings/Format/LockedCanvas.js",
 			"slide/apiCommon.js",
-			
 			"word/Editor/document-visitor.js",
-			
 			"word/apiBuilder.js",
 			"slide/apiBuilder.js",
 			"word/fromToJSON.js",
 			"slide/fromToJSON.js",
-
+			"slide/document/editor.js",
 			"common/versionHistory.js",
 			"common/clipboard_base.js",
 			"common/text_input2.js",
@@ -401,15 +376,10 @@
 			"common/Drawings/Format/OleObject.js",
 			"common/Drawings/Format/DrawingContent.js",
 			"common/plugins.js",
-
 			"common/Native/native_graphics.js",
-			
 			"vendor/easysax.js",
 			"common/openxml.js",
-			
-			
 			"common/Drawings/gif-player.js",
-		
 			"vendor/gifuct-js/bytestream.js",
 			"vendor/gifuct-js/dataparser.js",
 			"vendor/gifuct-js/gif.js",
@@ -421,19 +391,15 @@
 				"common/Local/license.js"
 			],
 			"common": [
-				"common/Local/common.js",
-				"slide/Local/api.js"
+				"common/Local/license.js"
 			]
 		},
-		"mobile": [
-		],
+		"mobile": [],
 		"exclude_mobile": [
 			"vendor/iscroll.js",
 			"common/Overlay.js",
-
 			"common/Scrolls/mobileTouchManagerBase.js",
 			"slide/Drawing/mobileTouchManager.js",
-			
 			"word/Drawing/cachemanager.js",
 			"word/Drawing/ShapeDrawer.js",
 			"slide/Drawing/HtmlPage.js",
