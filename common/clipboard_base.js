@@ -1470,6 +1470,22 @@
 
 		Button_Paste : function()
 		{
+			// [OHOS: paste] OHOS 宿主桥：工具栏「粘贴」走系统剪贴板（宿主
+			// @ohos.pasteboard 读取 → __lsoPasteIn 回调喂回）。官方三条路在本壳全断
+			// （桌面分支需 window.AscDesktopEditor，本壳按 web 语义不保留；新粘贴
+			// 路径开关默认关且 ArkWeb 无 clipboard-read 授权设施；
+			// execCommand('paste') 被 Chromium 安全策略禁止）——软键盘无 Ctrl+V，
+			// 工具栏按钮是 Pad/手机唯一粘贴入口。已受理（结果异步回调）返回 true，
+			// 不弹官方「请用键盘快捷键」提示框；桥不在（异常态）回落官方路径兜底。
+			// Ctrl+V 的 paste 事件链不受影响。刻意不做 LastCopyBinary 内部缓存优先：
+			// 跨应用复制后缓存已过期，系统剪贴板恒为唯一真源（官方桌面语义同此）。
+			if (window["AscNative"] && typeof window["AscNative"]["_call"] === "function")
+			{
+				console.error('LSO_PASTE_BTN');
+				window["AscNative"]["_call"]("execCommand", ["clip:paste"]);
+				return true;
+			}
+
 			if (window["AscDesktopEditor"])
 			{
 				window["asc_desktop_copypaste"](this.Api, "Paste");
@@ -1946,4 +1962,64 @@ window["asc_desktop_copypaste"] = function(_api, _method)
 	if (!bIsFocus)
 		_api.asc_enableKeyEvents(true);
 	window["AscDesktopEditor"][_method]();
+};
+
+// [OHOS: paste] 宿主粘贴回调入口（原 ascshim 58_pastebtn 注入段源码化）：
+// EditorPage.pasteClipboard（@ohos.pasteboard 读系统剪贴板，htmlText 优先 /
+// plainText 兜底，base64 UTF-8 编码）经 ctx.js 注入调用。惰性取 g_clipboardBase
+// （调用时刻实例必然就位——Button_Paste 的 AscNative 分支已先被点击）。
+// base64 → string：atob 得到的是 latin1（每字符一字节），中文 UTF-8 多字节
+// 必须经 TextDecoder 还原（直接 atob 会乱码）。html 走官方 CommonIframe_PasteStart
+// （Button_Paste_New 同款 iframe 解析路径），纯文本走 Api.asc_PasteData(Text)，
+// 空剪贴板状态栏短提示。
+window["__lsoPasteIn"] = function (b64Html, b64Text)
+{
+	try
+	{
+		var _b64ToUtf8 = function (b64)
+		{
+			if (!b64)
+				return '';
+			try
+			{
+				var _bin = window.atob(b64);
+				var _u8 = new Uint8Array(_bin.length);
+				for (var i = 0; i < _bin.length; i++)
+					_u8[i] = _bin.charCodeAt(i);
+				return new TextDecoder('utf-8').decode(_u8);
+			}
+			catch (dx)
+			{
+				return '';
+			}
+		};
+		var _html = _b64ToUtf8(b64Html);
+		var _text = _b64ToUtf8(b64Text);
+		console.error('LSO_PASTE_IN html=' + _html.length + ' text=' + _text.length);
+		var _cb = window['AscCommon'] && window['AscCommon'].g_clipboardBase;
+		if (!_cb)
+		{
+			console.error('LSO_PASTE_IN_ERR no g_clipboardBase');
+			return;
+		}
+		if (_html)
+		{
+			_cb.CommonIframe_PasteStart(_html, _text || '');
+		}
+		else if (_text)
+		{
+			_cb.Api.asc_PasteData(AscCommon.c_oAscClipboardDataFormat.Text, _text);
+		}
+		else
+		{
+			var _sb = (window.SSE || window.DE || window.PE);
+			_sb = _sb && _sb.controllers && _sb.controllers.Statusbar;
+			if (_sb && typeof _sb.setStatusCaption === 'function')
+				_sb.setStatusCaption('剪贴板为空', true, 0);
+		}
+	}
+	catch (ex)
+	{
+		console.error('LSO_PASTE_IN_ERR ' + String(ex));
+	}
 };
