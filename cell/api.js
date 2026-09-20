@@ -94,7 +94,31 @@ var editor;
 	this.activeLocalization = null;
 
     // spellcheck
-    this.defaultLanguage = 1033;
+    // [OHOS: doclang] SpreadsheetML 无文档级语言元素，引擎对任何 xlsx 都用此内置
+    // 默认（原 1033=en-US）。官方 web 对 cell 的语言语义 = 编辑器偏好
+    // （sse-spellcheck-locale，设置面板拼写检查字典语言）：用户改过的键值优先，
+    // 缺省取简体中文（LCID 2052 = 0x0804）。面板侧官方已按 mode.lang fallback
+    // （Spellcheck.js updateLanguages），引擎侧在此对齐。
+    {
+        var _ohosDocLang = 0;
+        try
+        {
+            _ohosDocLang = parseInt(window.localStorage.getItem('sse-spellcheck-locale'), 10);
+        }
+        catch (e)
+        {
+        }
+        if (!isFinite(_ohosDocLang) || _ohosDocLang <= 0)
+            _ohosDocLang = 2052;
+        this.defaultLanguage = _ohosDocLang;
+        try
+        {
+            console.error('LSO_DOCLANG init=' + _ohosDocLang);
+        }
+        catch (e)
+        {
+        }
+    }
     this.spellcheckState = new AscCommonExcel.CSpellcheckState();
 
     this.documentFormatSave = c_oAscFileType.XLSX;
