@@ -803,8 +803,137 @@
 	{
 		this.sendEvent("asc_onOpenDocumentProgress", this.OpenDocumentProgress);
 	};
+	// [OHOS: fonts] 字族下拉归一（原 ascshim 30_open 对实例方法的 wrap，源码化）：
+	// ① 同签名跳过（官方链重发同内容 → 第二次丢弃，杜绝下拉双份）；
+	// ② 族归一：按 Thumbnail（族号）每族一条、中文名优先、剔 .ttf/.otf 文件名行
+	//   （构建表文件别名，非族名）；
+	// ③ 构建期内部行清单 window.__lso_font_hidden（AllFonts.js 装配注入，事实源
+	//   UI_HIDDEN_FONT_ROWS）过滤用户下拉（引擎候选不动，映射照常）；
+	// ④ 用户自导入字体（window.__lso_user_font_names，字体注册表注入）不参与
+	//   族归一直接保留——它没有随包缩略图，并入族组会被丢；缩略图指向空白槽位
+	//   __lso_font_blank_thumb（原 thumbnail=行号追加必越界 → UI getImage 抛异常
+	//   下拉渲染中断）。
+	// g_font_infos 渲染注册表不动（文档引用行名照常——字体内部 name 须=注册行名
+	// 契约）。异常降级：归一抛错时回原列表走官方链（不因适配挂掉字体注入）。
+	baseEditorsApi.prototype._ohosNormalizeFontList = function (fonts)
+	{
+		var _names = [], _nmv = [];
+		for (var ni = 0; ni < (fonts || []).length; ni++)
+		{
+			var _ff = fonts[ni];
+			_nmv.push(String(_ff && _ff.asc_getFontName ? _ff.asc_getFontName() : ''));
+		}
+		var _sig = _nmv.join('|');
+		if (window.__lsoInjSig && window.__lsoInjSig === _sig)
+		{
+			console.error('LSO_FONT_SKIP_DUP n=' + _nmv.length);
+			return null; // 同内容重发 → 调用方丢弃
+		}
+		window.__lsoInjSig = _sig;
+		var _uiHidden = function (n)
+		{
+			var _hid = window.__lso_font_hidden || [];
+			for (var hi = 0; hi < _hid.length; hi++)
+			{
+				if (_hid[hi] === n) { return true; }
+			}
+			return false;
+		};
+		var _lsoUserFont = function (n)
+		{
+			var _uf = window.__lso_user_font_names || [];
+			for (var ui = 0; ui < _uf.length; ui++)
+			{
+				if (_uf[ui] === n) { return true; }
+			}
+			return false;
+		};
+		// 族归一（两轮）：候选名 → 选中文优先 → 输出
+		var _byThumb = {};
+		var _keep = [];
+		for (var k = 0; k < (fonts || []).length; k++)
+		{
+			var _ft = fonts[k];
+			var _nm = String(_ft && _ft.asc_getFontName ? _ft.asc_getFontName() : '');
+			var _th = String(_ft && _ft.asc_getFontThumbnail ? _ft.asc_getFontThumbnail() : 'u');
+			if (!_nm || /\.(ttf|otf|eot|woff2?)$/i.test(_nm)) { continue; }
+			// 内部字体行（构建期清单）：留引擎候选列表供映射，但不进用户下拉
+			if (_uiHidden(_nm)) { console.error('LSO_FONT_HIDDEN name=' + _nm); continue; }
+			// 用户自导入字体：直接保留（不参与族归一，见头注④）
+			if (_lsoUserFont(_nm))
+			{
+				var _dupU = false;
+				for (var qu = 0; qu < _keep.length; qu++)
+				{
+					if (_keep[qu].name === _nm) { _dupU = true; break; }
+				}
+				if (!_dupU) { _keep.push({thumb: _th, name: _nm}); }
+				console.error('LSO_FONT_USER_KEEP name=' + _nm);
+				continue;
+			}
+			if (!_byThumb[_th]) { _byThumb[_th] = []; }
+			_byThumb[_th].push(_nm);
+		}
+		for (var _tk in _byThumb)
+		{
+			var _names2 = _byThumb[_tk];
+			var _pick = '';
+			for (var j = 0; j < _names2.length; j++)
+			{
+				if (/[一-龥]/.test(_names2[j])) { _pick = _names2[j]; break; } // 中文名优先
+			}
+			if (!_pick) { _pick = _names2[0]; }
+			_keep.push({thumb: _tk, name: _pick});
+		}
+		// 从原列表挑选「被保留名字」的行（原 CFont 对象 + 不重复）
+		var _out = [];
+		for (var mm = 0; mm < (fonts || []).length; mm++)
+		{
+			var _fo2 = fonts[mm];
+			var _nm3 = String(_fo2 && _fo2.asc_getFontName ? _fo2.asc_getFontName() : '');
+			var _th3 = String(_fo2 && _fo2.asc_getFontThumbnail ? _fo2.asc_getFontThumbnail() : 'u');
+			if (/\.(ttf|otf|eot|woff2?)$/i.test(_nm3)) { continue; }
+			var _isKeep = false;
+			for (var kk = 0; kk < _keep.length; kk++)
+			{
+				if (_keep[kk].thumb === _th3 && _keep[kk].name === _nm3) { _isKeep = true; break; }
+			}
+			if (_isKeep)
+			{
+				// 用户字体：重建 CFont 指向空白缩略图槽位（头注④）
+				if (_lsoUserFont(_nm3))
+				{
+					var _blankTh = (typeof window.__lso_font_blank_thumb === 'number')
+						? window.__lso_font_blank_thumb : 0;
+					_out.push(new window.AscFonts.CFont(_nm3, "", _blankTh));
+				}
+				else
+				{
+					_out.push(_fo2);
+				}
+			}
+		}
+		console.error('LSO_FONT_INJ n=' + ((fonts || []).length) + ' out=' + _out.length);
+		return _out;
+	};
+
 	baseEditorsApi.prototype.sync_InitEditorFonts            = function(gui_fonts)
 	{
+		// [OHOS: fonts] 见 _ohosNormalizeFontList 头注；null = 同签名重复丢弃
+		if (window.AscNative)
+		{
+			try
+			{
+				var _ohosFonts = this._ohosNormalizeFontList(gui_fonts);
+				if (!_ohosFonts) { return; }
+				gui_fonts = _ohosFonts;
+			}
+			catch (iwx)
+			{
+				console.error('LSO_FONT_INJ_ERR ' + String(iwx));
+				// 异常降级：回原列表走官方链
+			}
+		}
 		if (!this.isViewMode) {
 			// correct names for the current interface language
 			var currentLang = this.asc_getLocale();
