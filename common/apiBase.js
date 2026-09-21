@@ -3176,7 +3176,161 @@
 		options.isPdfPrint = true;
 		this.downloadAs(c_oAscAsyncAction.Print, options);
 	};
+	// [OHOS: save] 序列化公共工具（原 ascshim 40_save 3.8.4 头部工具，源码化）：
+	// asc_nativeGetFileData 需要 window.native.Save_End 存在（官方桌面链依赖），
+	// 但全局挂 stub 会让 editorscommon loadScript 走「本地加载已成功」假分支
+	// （onSuccess 直接返回 → 模块缺失 → 文档打不开）——仅调用期间临时挂、finally
+	// 还原。30_open m7auto 验收链共用此口（全局挂名契约）。
+	window.__ohosWithNativeSaveEnd = function(fn)
+	{
+		var _old = window.native;
+		window.native = { Save_End: function() {} };
+		try { return fn(); } finally { window.native = _old; }
+	};
+
+	// [OHOS: save] asc_Save 的离线单机实现（分派见下方 asc_Save 头；行为逐块对齐
+	// 原 ascshim 覆写——判据日志字样 LSO_SAVEAS_*/LSO_AUTOSAVE_SKIP/LSO_SAVE_GUARD/
+	// LSO_NATIVE_SAVE* 原样保留）
+	baseEditorsApi.prototype._ohosSave = function (isNoUserSave, isSaveAs, isResaveAttack, options)
+	{
+		var _t = this;
+		try
+		{
+			// 官方 Local/api.js 守卫（省略 History 依赖项）——isSaveAs 分支本层接管
+			//（另存为语义=不动源文件，不走保存回写链）
+			if (isResaveAttack === true) { console.error('LSO_SAVE_GUARD resave'); return false; }
+			// ---- 另存为（官方 Save As 菜单/Ctrl+Shift+S → asc_Save(false, true)）----
+			// 序列化当前模型（DOCY，同保存链）→ execCommand('save:as') → 宿主系统
+			// 保存框（DocumentViewPicker.save：用户选位置/文件名）→ 字节落盘 →
+			// saveTarget/savePath 身份演进 + recents 补录。不写回源文件、不弹官方
+			// 「保存中」UI（异步系统框，引擎状态不参入）。
+			if (true === isSaveAs)
+			{
+				try
+				{
+					var _sbin = window.__ohosWithNativeSaveEnd(function () { return _t.asc_nativeGetFileData(); });
+					if (!_sbin || !_sbin.byteLength) { console.error('LSO_SAVEAS_EMPTY'); return false; }
+					var _rr = String(window.AscNative._call('execCommand',
+						['save:as', AscCommon.Base64.encode(_sbin, 0, _sbin.byteLength, false)]) || '');
+					console.error('LSO_SAVEAS_CALL len=' + _sbin.byteLength + ' ret=' + _rr);
+					return true;
+				}
+				catch (sax)
+				{
+					console.error('LSO_SAVEAS_ERR ' + String(sax));
+					return false;
+				}
+			}
+			// 新建文档无保存目标：autosave 直接短路——既不序列化（大空转）也不回写
+			//（无 target）；用户保存走正常链（无身份 → 宿主弹另存为）。目标判定 =
+			// save:type 同步询问（宿主单点状态；页面无本地推断——避免两头状态不同步）。
+			if (true === isNoUserSave)
+			{
+				var _st = 'sandbox';
+				try { _st = String(window.AscNative._call('save:type', []) || 'sandbox'); } catch (stx) {}
+				if ('none' === _st)
+				{
+					console.error('LSO_AUTOSAVE_SKIP (no save target)');
+					return false;
+				}
+			}
+			if (true !== isNoUserSave) { this.IsUserSave = true; }
+			if (!(this.canSave && !this.isLongAction() && !this.isGroupActions()))
+			{
+				console.error('LSO_SAVE_GUARD canSave=' + this.canSave + ' long=' + this.isLongAction()
+					+ ' group=' + this.isGroupActions());
+				return false;
+			}
+			this.canSave = false;
+			// 「正在保存」状态栏提示（官方协同语义文案；官方离线单机把文案置空即
+			// 静默，本壳按用户语义补上）。必须在序列化之前让出一帧（setTimeout）——
+			// 整条保存链是同步的（序列化与 x2t 转换都阻塞页面主线程，同步桥还阻塞
+			// 宿主线程），不让出渲染机会提示一帧都出不来。autosave 不打扰。
+			var _sb = null;
+			var _userSave = true === isNoUserSave ? 0 : 1;
+			if (0 !== _userSave)
+			{
+				try
+				{
+					_sb = (window.SSE || window.DE || window.PE);
+					_sb = _sb && _sb.controllers && _sb.controllers.Statusbar;
+					if (_sb && typeof _sb.setStatusCaption !== 'function') { _sb = null; }
+				} catch (sbx) { _sb = null; }
+			}
+			var _saving = function (on)
+			{
+				try { if (_sb) { _sb.setStatusCaption(on ? '正在保存文档...' : '', true, 0); } } catch (scx) {}
+			};
+			// 偏差声明（沿原覆写）：askSaveChanges 回调不等待——离线单机同文件覆盖
+			// 保存无取消语义；序列化完成后自行复位 canSave（错误路径亦复位）。
+			//（在 _saving(true) 之前执行：它内部 sync_StartAction 会以空文案刷一次
+			// 状态栏，后调会把提示清掉。）
+			if (_t.CoAuthoringApi && typeof _t.CoAuthoringApi.askSaveChanges === 'function')
+			{
+				_t.CoAuthoringApi.askSaveChanges(function (e) { _t._onSaveCallback(e); });
+			}
+			_saving(true);
+			var _runSave = function ()
+			{
+				try
+				{
+					var _nbin = window.__ohosWithNativeSaveEnd(function ()
+					{
+						return _t.asc_nativeGetFileData();
+					});
+					var _r2 = '';
+					if (_nbin && _nbin.byteLength)
+					{
+						// 第三参 = 用户保存标志——引擎桌面语义：autosave 不触发
+						// 「最近使用」补录；用户主动保存（Ctrl+S/保存按钮）才补录。
+						_r2 = String(window.AscNative._call('execCommand',
+							['save:bin', AscCommon.Base64.encode(_nbin, 0, _nbin.byteLength, false), _userSave]));
+						console.error('LSO_NATIVE_SAVE len=' + _nbin.byteLength + ' user=' + _userSave + ' ret=' + _r2);
+						// 复位官方「正在保存文档…」状态（本地链无完成通道——同步落盘
+						// 返回后直接复位；宿主侧「已保存」toast 由 commitSavedLocal 发）。
+						try
+						{
+							if (typeof _t._onSaveCallback === 'function') { _t._onSaveCallback(null); }
+						} catch (scx) {}
+					}
+					else
+					{
+						console.error('LSO_NATIVE_SAVE_EMPTY');
+					}
+				}
+				catch (nsv)
+				{
+					console.error('LSO_NATIVE_SAVE_ERR ' + String(nsv));
+					_saving(false);
+					_t.canSave = true;
+					return;
+				}
+				_saving(false);
+				_t.canSave = true;
+			};
+			if (0 !== _userSave) { setTimeout(_runSave, 50); } else { _runSave(); }
+			return true;
+		}
+		catch (gv)
+		{
+			console.error('LSO_SAVE_WRAP_ERR ' + String(gv));
+			return false;
+		}
+	};
+
 	baseEditorsApi.prototype.asc_Save = function (isAutoSave, isIdle) {
+		// [OHOS: save] 离线单机保存链（原 ascshim 40_save 3.8.4 原型覆写，源码化；
+		// 官方桌面参考实现在 word/cell/slide 的 Local/api.js——按官方架构该层不进
+		// build.py 产物（configs 的 desktop 清单为空），本分支即其在本壳的等价物）。
+		// 语义骨架同官方 Local/api.js.asc_Save：guard → askSaveChanges（官方 UI
+		// 保存态）→ asc_nativeGetFileData（BinaryFileWriter 序列化 → DOCY 原始字节，
+		// 与打开链 in.bin 同格式）→ Base64 → execCommand('save:bin') → 宿主 x2t
+		// doct_bin2docx 落盘。签名按官方桌面四参（isNoUserSave/isSaveAs/
+		// isResaveAttack/options）；web-apps UI 的无参/单参调用在两种签名下语义一致。
+		if (window.AscNative && typeof window.AscNative._call === 'function')
+		{
+			return this._ohosSave.apply(this, arguments);
+		}
 		var t = this;
 		var res = false;
 		if (this.canSave && this._saveCheck() && this.canSendChanges()) {
@@ -3262,6 +3416,14 @@
 	// Offline mode
 	baseEditorsApi.prototype.asc_isOffline  = function()
 	{
+		// [OHOS: save] 离线单机语义恒真（原 ascshim 40_save 3.8.4 原型覆写，源码化）：
+		// 本壳 http://localhost 协议下官方判定恒 false，而文件菜单档位公式
+		//（FileMenu.js）需要 true 才能切「桌面离线」档（「另存为」显示/「下载为」
+		// 隐藏）；离线单机语义本身正确（chat/forcesave/签名等按离线降位）。
+		if (window.AscNative)
+		{
+			return true;
+		}
 		return (window.location.protocol.indexOf("file") == 0) ? true : false;
 	};
 	baseEditorsApi.prototype.asc_getUrlType = function(url)

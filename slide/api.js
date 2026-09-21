@@ -404,6 +404,12 @@
 
 	asc_docs_api.prototype.sendEvent = function()
 	{
+		// [OHOS: save] EditingError(-25) 分发前吞掉（原 ascshim 40_save 3.8.2 实例
+		// wrap，源码化）：无服务器链下 -25 持续误报；sendEvent 层是唯一单点
+		//（Main.onError 层拦截时机不足，见 word/api.js 同注释）。
+		if (arguments[0] === 'asc_onError' && arguments[1] === -25) {
+			return false;
+		}
         this.sendInternalEvent.apply(this, arguments);
 		var name = arguments[0];
 		if (_callbacks.hasOwnProperty(name))
@@ -2324,6 +2330,16 @@ background-repeat: no-repeat;\
 	};
 	asc_docs_api.prototype.asc_DownloadAs = function(options)
 	{
+		// [OHOS: save] 另存为重定向（原 ascshim 40_save 3.8.4 覆写，源码化；官方
+		// 桌面参考 Local/api.js 同款）：web 原版 downloadAs 走服务器 URL 链——本壳
+		// 无服务器死路。重定向 asc_Save(false, true) → [OHOS: save] isSaveAs 分支
+		// → execCommand('save:as') → 宿主系统保存框。isNaturalDownload 保留直通。
+		if (window.AscNative && typeof window.AscNative._call === 'function') {
+			if (!(options && options.isNaturalDownload)) {
+				console.error('LSO_DLAS_REDIRECT');
+				return this.asc_Save(false, true, undefined, options);
+			}
+		}
 		if (this.isLongAction()) {
 			return;
 		}
