@@ -1594,6 +1594,10 @@ CArrowDrawer.prototype.InitSize = function ( sizeW, sizeH )
 		// canvas 级探针实测）。tol 由触摸场景的调用方传入，鼠标 hover/点击判定
 		// 不传（官方行为不变）。mp 与 scroller 均为设备像素坐标（已乘 dPR），
 		// tol 须同样以设备像素传入（8 CSS px × retinaPixelRatio）。
+		// 注意：本容差只覆盖「事件已到达 canvas」的坐标边缘情形；target 命中
+		// 抖动（事件派给邻居、canvas 处理器不触发）与 pointer/touch 双流对抗
+		// 由宿主装配层 ohos/scrollpad.js 的 document capture 接管解决——两层
+		// 配合，缺 capture 层则触摸拖拽不可用（2026-09-22 回归实证）。
 		if (tol === undefined)
 			tol = 0;
 		if(this.settings.isVerticalScroll && mp.x >= 0 - tol && mp.x <= this.scroller.x + this.scroller.w + tol &&
@@ -1961,10 +1965,13 @@ CArrowDrawer.prototype.InitSize = function ( sizeW, sizeH )
 		} else {
 			this.that.mouseUp = false;
 
-			// [OHOS: touch-scroll] 触摸起手判定带 8 CSS px 容差（鼠标判定不变）；
-			// 原 capture 层坐标接管（ascshim 51_scrollpad 注入段）由本源码判定取代
+			// [OHOS: touch-scroll] 触摸起手判定带 8 CSS px 容差（鼠标判定不变）。
+			// 判定只认 pointerType==='touch'（PointerEvent 专有属性）：触摸的主
+			// 路径=宿主 ohos/scrollpad.js capture 层转发的 pointer 流；canvas 的
+			// ontouchstart 传入的是 Touch 对象（无此属性，走严格判定）——该路径
+			// 在 capture 层拦截后仅剩启动窗口期，无需容差。
 			if ( this.that._MouseHoverOnScroller( mousePos,
-				(evt && (evt.pointerType === 'touch' || (evt.touches && evt.touches.length > 0)))
+				(evt && evt.pointerType === 'touch')
 					? 8 * AscBrowser.retinaPixelRatio : 0 ) ) {
 				this.that.scrollerMouseUp = false;
 				this.that.scrollerMouseDown = true;
