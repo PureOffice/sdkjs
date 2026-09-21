@@ -480,7 +480,11 @@ CArrowDrawer.prototype.InitSize = function ( sizeW, sizeH )
 		this.canvas.style.zIndex = 100;
 		this.canvas.style.position = "absolute";
 		this.canvas.style.top = "0px";
-		this.canvas.style["msTouchAction"] = "none";
+		// [OHOS: touch-scroll] 用标准 touch-action 替换 IE 前缀 msTouchAction：
+		// Chromium 不认识 ms 前缀——不设 touch-action 时浏览器可把触摸移动转为
+		// 原生平移手势（pointer 流随即被 pointercancel 打断），滚动条触摸拖拽
+		// 无法进行。
+		this.canvas.style["touchAction"] = "none";
 		if ( navigator.userAgent.toLowerCase().indexOf( "webkit" ) != -1 ){
 			this.canvas.style.webkitUserSelect = "none";
 		}
@@ -518,18 +522,26 @@ CArrowDrawer.prototype.InitSize = function ( sizeW, sizeH )
         this.canvas.onmousewheel = this.evt_mousewheel;
 
 		var _that = this;
-		this.canvas.ontouchstart = function ( e ) {
-			_that.evt_mousedown( e.touches[0] );
-			return false;
-		};
-		this.canvas.ontouchmove = function ( e ) {
-			_that.evt_mousemove( e.touches[0] );
-			return false;
-		};
-		this.canvas.ontouchend = function ( e ) {
-			_that.evt_mouseup( e.changedTouches[0] );
-			return false;
-		};
+		// [OHOS: touch-scroll] touch 兜底绑定仅服务无 pointer 事件的老浏览器
+		//（对应 WorkEvents.js 的 isUsePointerEvents=false 环境）。pointer 流可用
+		// 时若同时绑 touch，同一次触摸双流都进 evt_mousedown：touchstart 传入的
+		// Touch 对象没有 pointerType，起手判定走无容差路径，与 pointerdown 的
+		// 抓握互相打架——命中失败落入「轨道点击翻页」分支，拖拽回弹。故 pointer
+		// 可用时触摸统一走 pointer 流，跳过 touch 绑定。
+		if ( window.PointerEvent === undefined ) {
+			this.canvas.ontouchstart = function ( e ) {
+				_that.evt_mousedown( e.touches[0] );
+				return false;
+			};
+			this.canvas.ontouchmove = function ( e ) {
+				_that.evt_mousemove( e.touches[0] );
+				return false;
+			};
+			this.canvas.ontouchend = function ( e ) {
+				_that.evt_mouseup( e.changedTouches[0] );
+				return false;
+			};
+		}
 
 		if ( this.canvas.addEventListener ){
 			this.canvas.addEventListener( 'DOMMouseScroll', this.evt_mousewheel, false );
@@ -1948,6 +1960,16 @@ CArrowDrawer.prototype.InitSize = function ( sizeW, sizeH )
 		this.that.mouseDown = true;
 
 		AscCommon.capturePointer(e, this.that.canvas);
+		// [OHOS: touch-scroll] 官方 capturePointer 仅对 mouse 生效（WorkEvents.js
+		// 内 pointerType==="mouse" 条件）。触摸不 capture 时手指拖出窄条（14px，
+		// 拖拽极易出界）后 pointermove 不再派发给 canvas，拖拽跟手中断。此处对
+		// touch/pen 就地 capture；不改共享函数——它另有 WorkEvents 与 cell
+		// EventsController 两处调用方，touch 行为变更会波及文本拖选等手势，
+		// 超出滚动条修复的范围。
+		if ( e && e.pointerType !== undefined && e.pointerType !== "mouse" &&
+			e.pointerId !== undefined && this.that.canvas.setPointerCapture ) {
+			try { this.that.canvas.setPointerCapture( e.pointerId ); } catch ( err ) {}
+		}
 		
 		e.userScroll = true;
 
