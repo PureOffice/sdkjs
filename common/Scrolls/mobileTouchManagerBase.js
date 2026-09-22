@@ -1372,9 +1372,15 @@
 		{
 			that.ContextMenuShowTimerId = -1;
 			var _pos = that.delegate.GetContextMenuPosition();
+			// [OHOS: nofocus] isGlobalDisableFocus 语义是「临时禁用聚焦夺回」，本质是
+			// 借用标志而非本函数私有状态——恢复必须回原值。官方写法硬编码 false 成立
+			// 的前提是初值必为 false（默认形态），但 nofocus 形态（非 PC）下该标志随
+			// 构造器按 URL 初始化为 true，长按一次就会被永久打回 false，nofocus 抑制
+			// 从此全线失效（点工具栏/点文档区的软键盘误弹回归且不再自愈）。
+			var _bDisableFocusPrev = AscCommon.g_inputContext ? AscCommon.g_inputContext.isGlobalDisableFocus : false;
 			if (AscCommon.g_inputContext) AscCommon.g_inputContext.isGlobalDisableFocus = true;
 			that.Api.sendEvent("asc_onShowPopMenu", _pos.X, _pos.Y, _pos.Mode);
-			if (AscCommon.g_inputContext) AscCommon.g_inputContext.isGlobalDisableFocus = false;
+			if (AscCommon.g_inputContext) AscCommon.g_inputContext.isGlobalDisableFocus = _bDisableFocusPrev;
 		}, 500);
 	};
 

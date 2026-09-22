@@ -477,14 +477,21 @@ CArrowDrawer.prototype.InitSize = function ( sizeW, sizeH )
 		this.canvas.style.height = "100%";
 
 		this.canvas.that = this;
+		// [OHOS: touch-scroll] 让 canvas 被平台判定为「可点击」：Blink 系的触摸
+		// 目标调整（TouchAdjustment）会把落在「不可点击」小元素上的触摸改派给
+		// 附近「可点击」的候选元素（实测：无 click handler 的 14px 窄 canvas 被
+		// 改派给有 onclick 的文档覆盖层——点滚动条出光标、拖不动的根因）。挂上
+		// click handler 后平台 target 恢复为 canvas 自身，原生 pointer 路径即工作。
+		this.canvas.onclick = function () { return false; };
+		// [OHOS: touch-scroll] 注册滚动条实例（供 __lsoIsScrollbar 查询，见文件末尾）
+		if ( window.__lsoScrollReg ) { window.__lsoScrollReg( this.canvas ); }
 		this.canvas.style.zIndex = 100;
 		this.canvas.style.position = "absolute";
 		this.canvas.style.top = "0px";
-		// [OHOS: touch-scroll] 用标准 touch-action 替换 IE 前缀 msTouchAction：
-		// Chromium 不认识 ms 前缀——不设 touch-action 时浏览器可把触摸移动转为
-		// 原生平移手势（pointer 流随即被 pointercancel 打断），滚动条触摸拖拽
-		// 无法进行。
-		this.canvas.style["touchAction"] = "none";
+		// [OHOS: touch-scroll] 保持官方原样（msTouchAction 为 IE 前缀，Chromium
+		// 不识别，原样保留不动）：原生 pan 手势的抑制由下方 ontouchstart 的
+		// preventDefault 承担（官方 IE 时代机制），不用标准 touch-action。
+		this.canvas.style["msTouchAction"] = "none";
 		if ( navigator.userAgent.toLowerCase().indexOf( "webkit" ) != -1 ){
 			this.canvas.style.webkitUserSelect = "none";
 		}
@@ -521,27 +528,21 @@ CArrowDrawer.prototype.InitSize = function ( sizeW, sizeH )
         AscCommon.addMouseEvent(this.canvas, "out", this.evt_mouseout);
         this.canvas.onmousewheel = this.evt_mousewheel;
 
-		var _that = this;
-		// [OHOS: touch-scroll] touch 兜底绑定仅服务无 pointer 事件的老浏览器
-		//（对应 WorkEvents.js 的 isUsePointerEvents=false 环境）。pointer 流可用
-		// 时若同时绑 touch，同一次触摸双流都进 evt_mousedown：touchstart 传入的
-		// Touch 对象没有 pointerType，起手判定走无容差路径，与 pointerdown 的
-		// 抓握互相打架——命中失败落入「轨道点击翻页」分支，拖拽回弹。故 pointer
-		// 可用时触摸统一走 pointer 流，跳过 touch 绑定。
-		if ( window.PointerEvent === undefined ) {
-			this.canvas.ontouchstart = function ( e ) {
-				_that.evt_mousedown( e.touches[0] );
-				return false;
-			};
-			this.canvas.ontouchmove = function ( e ) {
-				_that.evt_mousemove( e.touches[0] );
-				return false;
-			};
-			this.canvas.ontouchend = function ( e ) {
-				_that.evt_mouseup( e.changedTouches[0] );
-				return false;
-			};
-		}
+		// [OHOS: touch-scroll] touch 绑定改为纯 preventDefault（return false），
+		// 不再转发 evt_*：触摸驱动统一走 pointer 流（pointerdown/move/up）——
+		// 若 touchstart/move 也转发进 evt_mousedown 会与 pointer 流重复驱动
+		//（Touch 对象无 pointerType，起手判定走无容差路径，会与抓握打架）。
+		// 保留绑定的目的是**阻止默认行为**：抑制浏览器原生 pan 手势与触摸结束后
+		// 的合成鼠标事件（防误触发文档光标）。
+		this.canvas.ontouchstart = function ( e ) {
+			return false;
+		};
+		this.canvas.ontouchmove = function ( e ) {
+			return false;
+		};
+		this.canvas.ontouchend = function ( e ) {
+			return false;
+		};
 
 		if ( this.canvas.addEventListener ){
 			this.canvas.addEventListener( 'DOMMouseScroll', this.evt_mousewheel, false );
@@ -1987,14 +1988,12 @@ CArrowDrawer.prototype.InitSize = function ( sizeW, sizeH )
 		} else {
 			this.that.mouseUp = false;
 
-			// [OHOS: touch-scroll] 触摸起手判定带 8 CSS px 容差（鼠标判定不变）。
-			// 判定只认 pointerType==='touch'（PointerEvent 专有属性）：触摸的主
-			// 路径=宿主 ohos/scrollpad.js capture 层转发的 pointer 流；canvas 的
-			// ontouchstart 传入的是 Touch 对象（无此属性，走严格判定）——该路径
-			// 在 capture 层拦截后仅剩启动窗口期，无需容差。
+			// [OHOS: touch-scroll] 触摸起手判定带 8 CSS px 容差（鼠标判定不变）：
+			// 触摸坐标带手指接触面积的抖动，严格落在滑块矩形内会频繁 miss。
+			// 只认 pointerType==='touch'（canvas 的 ontouchstart 传的是 Touch
+			// 对象、无此属性，走无容差路径——该路径已由 pointer 流取代）。
 			if ( this.that._MouseHoverOnScroller( mousePos,
-				(evt && evt.pointerType === 'touch')
-					? 8 * AscBrowser.retinaPixelRatio : 0 ) ) {
+				(evt && evt.pointerType === 'touch') ? 8 * AscBrowser.retinaPixelRatio : 0 ) ) {
 				this.that.scrollerMouseUp = false;
 				this.that.scrollerMouseDown = true;
 
@@ -2251,3 +2250,55 @@ CArrowDrawer.prototype.InitSize = function ( sizeW, sizeH )
 	window["AscCommon"].ScrollSettings = ScrollSettings;
     window["AscCommon"].ScrollObject = ScrollObject;
 })(window);
+
+// ============================================================================
+// [OHOS: touch-scroll] 滚动条判定辅助（按元素查询）
+//
+// 背景（2026-09-22 真机取证，2026-09-23 定案）：触摸落在滚动条 canvas（14px
+// 窄条）上时，平台给的 target 曾是左侧文档覆盖层/按钮栏——根因是 Blink 系的
+// **触摸目标调整**（TouchAdjustment）：命中「不可点击」的小元素时，自动把事件
+// 改派给附近「可点击」的候选元素。canvas 无 click handler 被判不可点击，而文档
+// 覆盖层有 onclick（MobileTouchManager.addClickElement 所设）→ 触摸被改派 →
+// 拖不动 + 点击穿透进文档。让 canvas 可点击（AddCanvasToHolder 里挂 onclick）后
+// 平台 target 恢复为 canvas 自身（实测 LSO_TGT=CANVAS），原生 pointer 路径完整
+// 工作，无需任何事件接管。
+//
+// 本段只保留辅助查询：某元素是否属于滚动条——供引擎其它部分跳过滚动条区域
+// （如 text_input2 的「点文档区补聚焦」不应在滚动条上触发）。
+// ============================================================================
+(function () {
+	if (window.__lsoScrollPad) { return; }
+	window.__lsoScrollPad = true;
+	var _bars = [];
+	// ScrollObject 初始化时注册（AddCanvasToHolder 调用）
+	window.__lsoScrollReg = function (canvas) { _bars.push(canvas); };
+	// el 是否属于某个滚动条（canvas 自身或其内部元素）。倒序遍历 + 剔除失效项：
+	// cell 等容器重建会产生新 canvas，旧实例不能留在注册表（强引用阻止回收，
+	// 且遍历随重建次数无界增长）。
+	// 坐标查询：该点是否落在某滚动条矩形内（按注册 canvas 的实时 rect）。
+	// 与 __lsoIsScrollbar（按元素）互补：平台的触摸目标可能被改派给别的元素，
+	// 此时元素判据失效，坐标判据仍可靠（坐标即用户视觉位置）。
+	window.__lsoScrollHitAt = function (x, y) {
+		for (var i = _bars.length - 1; i >= 0; i--) {
+			var cv = _bars[i];
+			if (!cv || !cv.that || !cv.parentElement) { _bars.splice(i, 1); continue; }
+			var r = cv.getBoundingClientRect();
+			if (r.width < 2 && r.height < 2) { continue; }        // 隐藏/未布局
+			if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) { return true; }
+		}
+		return false;
+	};
+	window.__lsoIsScrollbar = function (el) {
+		for (var i = _bars.length - 1; i >= 0; i--) {
+			var cv = _bars[i];
+			if (!cv || !cv.that || !cv.parentElement) { _bars.splice(i, 1); continue; }
+			// 容器（id_*_scroll / ws-*-scrollbar）也是滚动条区域：各事件（pointer/touch/
+			// 合成鼠标）的 target 可能落在 canvas 本身或其容器上，两者都应视为滚动条
+			var holder = cv.parentElement;
+			if (el === cv || el === holder) { return true; }
+			if (cv.contains && cv.contains(el)) { return true; }
+			if (holder.contains && holder.contains(el)) { return true; }
+		}
+		return false;
+	};
+})();

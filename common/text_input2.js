@@ -1449,20 +1449,80 @@
 		// 主动聚焦隐藏输入代理拉起软键盘。判据与 web-apps 一致
 		// （closest('#editor_sdk')，六个编辑器统一的文档区容器 id）；三种指针事件
 		// 都挂（不同路径收到的种类不同）。
+		// 本次触摸序列是否始于文档区——下方 focus 监听器的「按来源放行」也要用；
+		// 两者同在本函数体内，用局部量传递，不挂 window。
+		var _ohosInDocSeq = false;
 		if (/[?&]nofocus=1/.test(window.location.search || ''))
 		{
+			// 本次触摸序列是否始于文档区（序列级标记：抬手时 target/坐标都可能
+			// 因拖拽离开起点，不能按当次事件判定）
+			var _ohosDownInDoc = false;
+			// 本次触摸序列是否起手于滚动条（抬手时坐标/target 可能已离开滚动条）
+			var _ohosDownScroll = false;
 			var _ohosFocusMark = function(e)
 				{
 					try
 					{
-						var _el = e && e.target;
-						if (_el && _el.closest && _el.closest('#editor_sdk'))
+						// [OHOS: nofocus] 滚动条跳过：滚动条不属"点文档区"语义，不应触发
+						// 补聚焦（否则点滚动条会聚焦隐藏输入代理、拉起软键盘）。双判据：
+						// ①按元素（target 是滚动条 canvas/容器/其后代）；
+						// ②按坐标（该点落在滚动条矩形内）——平台的触摸目标可能被改派给
+						// 其它元素（实测 target 为文档覆盖层），此时元素判据失效、坐标判据
+						// 仍可靠（坐标即用户视觉位置）。
+						var _cx = (e && e.clientX !== undefined) ? e.clientX
+							: (e && e.touches && e.touches[0] ? e.touches[0].clientX : undefined);
+						var _cy = (e && e.clientY !== undefined) ? e.clientY
+							: (e && e.touches && e.touches[0] ? e.touches[0].clientY : undefined);
+						var _isScroll = (e && window.__lsoIsScrollbar && window.__lsoIsScrollbar(e.target)) ||
+							(_cx !== undefined && window.__lsoScrollHitAt && window.__lsoScrollHitAt(_cx, _cy));
+						var _evType = e && e.type;
+						// 文档响应区 = 编辑器自绘的 canvas（word/slide = id_viewer_overlay，
+						// cell = ws-canvas*）。不能用容器判据：#editor_sdk 里还装着工具栏、
+						// 滚动条等 UI，容器判据会把点工具栏也算成点文档（实测点工具栏因此
+						// 弹键盘）。依赖点：官方若把文档覆盖层改成非 canvas 元素，本条会
+						// 静默失效（症状=点文档区不弹键盘），届时按新结构改这里。
+						var _inDocArea = !!(e && e.target && e.target.tagName === 'CANVAS'
+							&& e.target.closest && e.target.closest('#editor_sdk'));
+						if (_evType === 'mousedown' || _evType === 'pointerdown' || _evType === 'touchstart')
 						{
-							var _ha = window['AscCommon'].g_inputContext.HtmlArea;
-							if (_ha && document.activeElement !== _ha)
+							// 起手只记序列归属，不在此聚焦。聚焦时机放在抬手/click——与
+							// 引擎自己被抑制掉的「click 后聚焦」一致；起手时聚焦实测弹不住
+							// 键盘（焦点确已落在输入代理上，但随即被平台收起，机制未定），
+							// 抬手则稳定（真机验证）。
+							_ohosDownInDoc = !_isScroll && _inDocArea;
+							_ohosDownScroll = _isScroll;
+							// 同一信息给下方 focus 监听器用（末段兜底聚焦的按来源放行）
+							_ohosInDocSeq = _ohosDownInDoc;
+							return;
+						}
+						// click 用当次 target（就是被点元素，最准）；抬手用序列标记
+						// （拖拽会让 target 与坐标离开起点）
+						var _inDocForFocus = (_evType === 'click') ? _inDocArea : _ohosDownInDoc;
+						var _fromBar = (_evType === 'click') ? _isScroll : _ohosDownScroll;
+						if (_fromBar)
+						{
+							// [OHOS: nofocus] 滚动条序列抬手时主动让输入代理失焦：ArkWeb
+							// 在触摸结束后会按「当前焦点是否在可编辑元素上」把软键盘拉
+							// 起来——与触摸目标无关。于是只要此前点过文档区（焦点已落在
+							// 输入代理上），此后在滚动条上的任何操作都会弹出键盘（真机
+							// 实测，文档与表格皆然；未点过文档区则不复现）。失焦即切断
+							// 该条件；再点文档区时补聚焦会重建，那次焦点变化本身也会把
+							// 键盘拉起。
+							var _haBar = window['AscCommon'].g_inputContext.HtmlArea;
+							if (_haBar && document.activeElement === _haBar)
 							{
-								_ha.focus();
+								_haBar.blur();
 							}
+							return;
+						}
+						if (!_inDocForFocus)
+						{
+							return;
+						}
+						var _ha = window['AscCommon'].g_inputContext.HtmlArea;
+						if (_ha && document.activeElement !== _ha)
+						{
+							_ha.focus();
 						}
 					}
 					catch (_e2)
@@ -1472,6 +1532,12 @@
 			document.addEventListener('pointerdown', _ohosFocusMark, true);
 			document.addEventListener('mousedown', _ohosFocusMark, true);
 			document.addEventListener('touchstart', _ohosFocusMark, true);
+			// 起手之外还要挂抬手：编辑器打开时输入代理已被初始化聚焦
+			// （InitBrowserInputContext 的 send focus），起手时刻 activeElement 仍是
+			// 它而被「已聚焦」短路跳过；而点击本身会让它失焦，抬手才是补聚焦真正
+			// 生效的时机（否则首次点击空转、要第二次点击才弹键盘）。
+			document.addEventListener('pointerup', _ohosFocusMark, true);
+			document.addEventListener('touchend', _ohosFocusMark, true);
 		}
 
 		document.addEventListener("focus", function(e)
@@ -1501,11 +1567,15 @@
 			var _nativeFocusElementNoRemoveOnElementFocus = t.nativeFocusElementNoRemoveOnElementFocus;
 			t.nativeFocusElementNoRemoveOnElementFocus = false;
 
-			// [OHOS: nofocus] isGlobalDisableFocus 时同样早退：跳过末段兜底
-			// focusHtmlElement(t.getFocusElement())——它会把焦点强行拉回隐藏输入代理，
-			// 是键盘已隐藏后再点界面元素仍重弹软键盘的原因（前半段的
-			// onFocusInputText 等状态维护不受影响）
-			if (t.InterfaceEnableKeyEvents == false || t.isGlobalDisableFocus)
+			// [OHOS: nofocus] 末段兜底聚焦（把焦点强行拉回隐藏输入代理）按「来源」
+			// 放行。引擎原逻辑是「任何焦点变化都夺回」，这在 ArkWeb 上等价于「任何
+			// 界面操作都把软键盘弹回来」（点工具栏/关菜单误弹的根因）；但整条抑制掉
+			// 会连带丢掉它的正面作用——点击的默认行为会把焦点从输入代理带走（点到
+			// canvas 上不可聚焦 → 焦点落到 body），正是它把焦点按住、软键盘才稳定。
+			// 故只在「本次交互始于文档区」时放行（_ohosInDocSeq 由 _ohosFocusMark
+			// 按触摸序列维护）。前半段的 onFocusInputText 等状态维护不受影响。
+			if (t.InterfaceEnableKeyEvents == false
+				|| (t.isGlobalDisableFocus && !_ohosInDocSeq))
 			{
 				t.nativeFocusElement = null;
 				return;
