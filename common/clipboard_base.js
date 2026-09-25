@@ -1470,15 +1470,29 @@
 
 		Button_Paste : function()
 		{
-			// [OHOS: paste] OHOS 宿主桥：工具栏「粘贴」走系统剪贴板（宿主
-			// @ohos.pasteboard 读取 → __lsoPasteIn 回调喂回）。官方三条路在本壳全断
-			// （桌面分支需 window.AscDesktopEditor，本壳按 web 语义不保留；新粘贴
-			// 路径开关默认关且 ArkWeb 无 clipboard-read 授权设施；
-			// execCommand('paste') 被 Chromium 安全策略禁止）——软键盘无 Ctrl+V，
-			// 工具栏按钮是 Pad/手机唯一粘贴入口。已受理（结果异步回调）返回 true，
-			// 不弹官方「请用键盘快捷键」提示框；桥不在（异常态）回落官方路径兜底。
+			// [OHOS: paste] 两条读取通道，**Web 层优先**：
+			//  ① navigator.clipboard.read()——系统在**用户点击这一刻**弹授权窗，
+			//     应用无需预持权限（授权窗本身就是系统在读取时发的）。
+			//  ② 宿主桥（@ohos.pasteboard，下方 AscNative 分支）——①不可用或被拒
+			//     时回落。它要求应用先持有 READ_PASTEBOARD；启动时照常申请，而
+			//     若那次申请被系统「用户协议」模态（首次启动必弹）吞掉，宿主侧
+			//     遇 201 会当场补申请再重试（EditorPage.requestClipPerm）。
+			// 两条路读完都汇到 __lsoPasteApply（html 走 CommonIframe_PasteStart、
+			// 纯文本走 asc_PasteData，与官方 Button_Paste_New 同款分发）。
+			// 官方原三条路在本壳全断：桌面分支需 window.AscDesktopEditor（本壳按
+			// web 语义不保留）；新粘贴路径开关 TestUseNewPaste 默认关，且其
+			// Button_Paste_New 内 this 绑定有误（then 回调里 this.Api 取不到）；
+			// execCommand('paste') 被 Chromium 安全策略禁止。软键盘无 Ctrl+V，
+			// 工具栏按钮是 Pad/手机唯一粘贴入口，故已受理（结果异步回调）即返回
+			// true，不弹官方「请用键盘快捷键」提示框。
 			// Ctrl+V 的 paste 事件链不受影响。刻意不做 LastCopyBinary 内部缓存优先：
 			// 跨应用复制后缓存已过期，系统剪贴板恒为唯一真源（官方桌面语义同此）。
+			if (navigator.clipboard && typeof navigator.clipboard.read === 'function')
+			{
+				console.error('LSO_PASTE_BTN_WEB');
+				this.__lsoPasteWeb();
+				return true;
+			}
 			if (window["AscNative"] && typeof window["AscNative"]["_call"] === "function")
 			{
 				console.error('LSO_PASTE_BTN');
@@ -1560,6 +1574,59 @@
 				}
 				return _ret;
 			}
+		},
+
+		// [OHOS: paste] Web 层读取（Button_Paste 主路径）：navigator.clipboard.read()
+		// 由系统在读取这一刻弹授权窗（用户点击粘贴=手势，满足其激活要求）。
+		// 读成功交 __lsoPasteApply；失败（拒权/环境不支持）回落宿主桥，由宿主侧
+		// 再决定补申请还是提示。
+		__lsoPasteWeb : function()
+		{
+			var _hostFallback = function ()
+			{
+				if (window["AscNative"] && typeof window["AscNative"]["_call"] === "function")
+				{
+					console.error('LSO_PASTE_BTN');
+					window["AscNative"]["_call"]("execCommand", ["clip:paste"]);
+				}
+				else
+				{
+					window["__lsoPasteApply"]('', '');
+				}
+			};
+
+			navigator.clipboard.read()
+				.then(function (items)
+				{
+					var item = items && items[0];
+					if (!item)
+					{
+						window["__lsoPasteApply"]('', '');
+						return;
+					}
+					// 只取 html/plain：Internal（web text/x-custom）是 ONLYOFFICE 自家
+					// 浏览器间私有格式，跨应用复制不会有。
+					var _get = function (type)
+					{
+						if (item.types && item.types.indexOf(type) !== -1)
+							return item.getType(type).then(function (blob) { return blob.text(); });
+						return Promise.resolve(undefined);
+					};
+					return _get('text/html').then(function (html)
+					{
+						return _get('text/plain').then(function (text)
+						{
+							console.error('LSO_PASTE_WEB html=' + (html ? html.length : 0)
+								+ ' text=' + (text ? text.length : 0));
+							window["__lsoPasteApply"](html || '', text || '');
+						});
+					});
+				})
+				.catch(function (e)
+				{
+					console.error('LSO_PASTE_WEB_ERR ' + String(e));
+					_hostFallback();
+				});
 		},
 
 		ClearBuffer: function() {
@@ -1964,51 +2031,30 @@ window["asc_desktop_copypaste"] = function(_api, _method)
 	window["AscDesktopEditor"][_method]();
 };
 
-// [OHOS: paste] 宿主粘贴回调入口（原 ascshim 58_pastebtn 注入段源码化）：
-// EditorPage.pasteClipboard（@ohos.pasteboard 读系统剪贴板，htmlText 优先 /
-// plainText 兜底，base64 UTF-8 编码）经 ctx.js 注入调用。惰性取 g_clipboardBase
-// （调用时刻实例必然就位——Button_Paste 的 AscNative 分支已先被点击）。
-// base64 → string：atob 得到的是 latin1（每字符一字节），中文 UTF-8 多字节
-// 必须经 TextDecoder 还原（直接 atob 会乱码）。html 走官方 CommonIframe_PasteStart
+// [OHOS: paste] 粘贴数据统一分发出口（两条读取通道共用：Web 层 __lsoPasteWeb
+// 与宿主桥 __lsoPasteIn 都汇到这里）。惰性取 g_clipboardBase（调用时刻实例必然
+// 就位——Button_Paste 已先被执行）。html 走官方 CommonIframe_PasteStart
 // （Button_Paste_New 同款 iframe 解析路径），纯文本走 Api.asc_PasteData(Text)，
-// 空剪贴板状态栏短提示。
-window["__lsoPasteIn"] = function (b64Html, b64Text)
+// 两者皆空则状态栏短提示。
+window["__lsoPasteApply"] = function (html, text)
 {
 	try
 	{
-		var _b64ToUtf8 = function (b64)
-		{
-			if (!b64)
-				return '';
-			try
-			{
-				var _bin = window.atob(b64);
-				var _u8 = new Uint8Array(_bin.length);
-				for (var i = 0; i < _bin.length; i++)
-					_u8[i] = _bin.charCodeAt(i);
-				return new TextDecoder('utf-8').decode(_u8);
-			}
-			catch (dx)
-			{
-				return '';
-			}
-		};
-		var _html = _b64ToUtf8(b64Html);
-		var _text = _b64ToUtf8(b64Text);
-		console.error('LSO_PASTE_IN html=' + _html.length + ' text=' + _text.length);
+		console.error('LSO_PASTE_APPLY html=' + (html ? html.length : 0)
+			+ ' text=' + (text ? text.length : 0));
 		var _cb = window['AscCommon'] && window['AscCommon'].g_clipboardBase;
 		if (!_cb)
 		{
 			console.error('LSO_PASTE_IN_ERR no g_clipboardBase');
 			return;
 		}
-		if (_html)
+		if (html)
 		{
-			_cb.CommonIframe_PasteStart(_html, _text || '');
+			_cb.CommonIframe_PasteStart(html, text || '');
 		}
-		else if (_text)
+		else if (text)
 		{
-			_cb.Api.asc_PasteData(AscCommon.c_oAscClipboardDataFormat.Text, _text);
+			_cb.Api.asc_PasteData(AscCommon.c_oAscClipboardDataFormat.Text, text);
 		}
 		else
 		{
@@ -2022,4 +2068,31 @@ window["__lsoPasteIn"] = function (b64Html, b64Text)
 	{
 		console.error('LSO_PASTE_IN_ERR ' + String(ex));
 	}
+};
+
+// [OHOS: paste] 宿主桥回调入口（原 ascshim 58_pastebtn 注入段源码化）：
+// EditorPage.pasteClipboard（@ohos.pasteboard 读系统剪贴板，htmlText 优先 /
+// plainText 兜底，base64 UTF-8 编码）经 ctx.js 注入调用。
+// base64 → string：atob 得到的是 latin1（每字符一字节），中文 UTF-8 多字节
+// 必须经 TextDecoder 还原（直接 atob 会乱码）。
+window["__lsoPasteIn"] = function (b64Html, b64Text)
+{
+	var _b64ToUtf8 = function (b64)
+	{
+		if (!b64)
+			return '';
+		try
+		{
+			var _bin = window.atob(b64);
+			var _u8 = new Uint8Array(_bin.length);
+			for (var i = 0; i < _bin.length; i++)
+				_u8[i] = _bin.charCodeAt(i);
+			return new TextDecoder('utf-8').decode(_u8);
+		}
+		catch (dx)
+		{
+			return '';
+		}
+	};
+	window["__lsoPasteApply"](_b64ToUtf8(b64Html), _b64ToUtf8(b64Text));
 };
